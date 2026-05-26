@@ -1,20 +1,4 @@
-/**
- * Google OAuth 2.0 PKCE flow for the YouTube Data API.
- *
- * Free quota — no YouTube Premium or paid plan required.
- * The auth URL is opened in the user's default browser (Google refuses
- * embedded webviews); a tiny loopback HTTP server in the main process
- * captures the redirect and returns the code via IPC.
- *
- * Requires:
- *   VITE_YOUTUBE_CLIENT_ID      — OAuth client ID (type "Desktop app")
- *   VITE_YOUTUBE_CLIENT_SECRET  — paired client secret. Not confidential
- *                                  for desktop clients; Google issues it but
- *                                  it's bundled in installed apps by design.
- */
-
 const CLIENT_ID = import.meta.env.VITE_YOUTUBE_CLIENT_ID;
-const CLIENT_SECRET = import.meta.env.VITE_YOUTUBE_CLIENT_SECRET;
 const SCOPE = 'https://www.googleapis.com/auth/youtube.readonly';
 
 const TOKEN_KEY = 'youtube_token';
@@ -77,26 +61,7 @@ export async function login() {
     codeChallenge: challenge,
   });
 
-  // Exchange the code for tokens
-  const body = new URLSearchParams({
-    code,
-    client_id: CLIENT_ID,
-    redirect_uri: redirectUri,
-    grant_type: 'authorization_code',
-    code_verifier: verifier,
-  });
-  if (CLIENT_SECRET) body.set('client_secret', CLIENT_SECRET);
-
-  const res = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body,
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Token exchange failed (${res.status}): ${text}`);
-  }
-  const data = await res.json();
+  const data = await window.cupid.youtubeOauthExchange({ code, redirectUri, codeVerifier: verifier });
   storeTokens(data);
   return data.access_token;
 }
@@ -122,25 +87,14 @@ async function refreshAccessToken() {
   const refresh = localStorage.getItem(REFRESH_KEY);
   if (!refresh) return null;
 
-  const body = new URLSearchParams({
-    client_id: CLIENT_ID,
-    refresh_token: refresh,
-    grant_type: 'refresh_token',
-  });
-  if (CLIENT_SECRET) body.set('client_secret', CLIENT_SECRET);
-
-  const res = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body,
-  });
-  if (!res.ok) {
+  try {
+    const data = await window.cupid.youtubeOauthRefresh({ refreshToken: refresh });
+    storeTokens(data);
+    return data.access_token;
+  } catch {
     logout();
     return null;
   }
-  const data = await res.json();
-  storeTokens(data);
-  return data.access_token;
 }
 
 export function logout() {

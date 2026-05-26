@@ -15,6 +15,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const https = require('node:https');
+const crypto = require('node:crypto');
 
 const BIN_DIR = path.join(__dirname, '..', 'bin');
 const REPO = 'yt-dlp/yt-dlp';
@@ -82,6 +83,16 @@ function download(url, dest) {
   });
 }
 
+function sha256File(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(filePath);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('end', () => resolve(hash.digest('hex')));
+    stream.on('error', reject);
+  });
+}
+
 async function fetchLatestTag() {
   const res = await httpsGet(`https://api.github.com/repos/${REPO}/releases/latest`, 'application/vnd.github+json');
   if (res.statusCode !== 200) {
@@ -91,6 +102,37 @@ async function fetchLatestTag() {
   for await (const chunk of res) body += chunk;
   const data = JSON.parse(body);
   return data.tag_name;
+}
+
+async function fetchChecksums(tag) {
+  const checksumsUrl = `https://github.com/${REPO}/releases/download/${tag}/SHA2-256SUMS`;
+  const res = await httpsGet(checksumsUrl, 'text/plain');
+  if (res.statusCode !== 200) {
+    throw new Error(`Checksums file returned HTTP ${res.statusCode}`);
+  }
+  let body = '';
+  for await (const chunk of res) body += chunk;
+  const checksums = new Map();
+  for (const line of body.trim().split('\n')) {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      checksums.set(parts[1], parts[0]);
+    }
+  }
+  return checksums;
+}
+
+function verifyChecksum(filePath, expectedHash) {
+  return sha256File(filePath).then((actualHash) => {
+    if (actualHash.toLowerCase() !== expectedHash.toLowerCase()) {
+      throw new Error(
+        `SHA-256 mismatch for ${path.basename(filePath)}\n` +
+        `  Expected: ${expectedHash}\n` +
+        `  Actual:   ${actualHash}`
+      );
+    }
+    console.log(`[install-yt-dlp] ✓ SHA-256 verified for ${path.basename(filePath)}`);
+  });
 }
 
 async function main() {
@@ -130,6 +172,22 @@ async function main() {
 
   console.log(`[install-yt-dlp] downloading ${url}`);
   await download(url, dest);
+
+  if (tag !== 'latest') {
+    try {
+      const checksums = await fetchChecksums(tag);
+      const expectedHash = checksums.get(asset);
+      if (expectedHash) {
+        await verifyChecksum(dest, expectedHash);
+      } else {
+        console.warn(`[install-yt-dlp] no checksum found for ${asset} — skipping verification`);
+      }
+    } catch (err) {
+      console.warn(`[install-yt-dlp] checksum verification failed: ${err.message}`);
+      try { fs.unlinkSync(dest); } catch {}
+      throw err;
+    }
+  }
 
   if (process.platform !== 'win32') {
     fs.chmodSync(dest, 0o755);

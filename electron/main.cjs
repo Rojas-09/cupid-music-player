@@ -18,11 +18,11 @@ const execFileAsync = promisify(execFile);
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'cupid-audio',
-    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, bypassCSP: true },
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
   },
   {
     scheme: 'cupid-local',
-    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, bypassCSP: true },
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
   },
 ]);
 
@@ -510,14 +510,16 @@ function createWindow() {
     }
   });
 
-  // Toggle DevTools with Cmd+Shift+I / Ctrl+Shift+I / F12
-  win.webContents.on('before-input-event', (_e, input) => {
-    if (input.type !== 'keyDown') return;
-    const isDevToolsShortcut = input.key.toLowerCase() === 'i' && input.shift && (input.meta || input.control);
-    if (isDevToolsShortcut || input.key === 'F12') {
-      win.webContents.toggleDevTools({ mode: 'detach' });
-    }
-  });
+  // Toggle DevTools with Cmd+Shift+I / Ctrl+Shift+I / F12 (development only)
+  if (isDev) {
+    win.webContents.on('before-input-event', (_e, input) => {
+      if (input.type !== 'keyDown') return;
+      const isDevToolsShortcut = input.key.toLowerCase() === 'i' && input.shift && (input.meta || input.control);
+      if (isDevToolsShortcut || input.key === 'F12') {
+        win.webContents.toggleDevTools({ mode: 'detach' });
+      }
+    });
+  }
 
   if (isDev) {
     win.loadURL('http://127.0.0.1:5173');
@@ -674,6 +676,48 @@ ipcMain.handle('youtube-oauth-cancel', () => {
     try { activeOauthServer.close(); } catch {}
     activeOauthServer = null;
   }
+});
+
+// Token exchange for YouTube OAuth — runs in main process so the client
+// secret is never exposed to the renderer bundle.
+ipcMain.handle('youtube-oauth-exchange', async (_e, { code, redirectUri, codeVerifier }) => {
+  const clientSecret = process.env.VITE_YOUTUBE_CLIENT_SECRET;
+  const clientId = process.env.VITE_YOUTUBE_CLIENT_ID;
+  if (!clientId) throw new Error('Missing VITE_YOUTUBE_CLIENT_ID');
+
+  const body = new URLSearchParams({ code, client_id: clientId, redirect_uri: redirectUri, grant_type: 'authorization_code', code_verifier: codeVerifier });
+  if (clientSecret) body.set('client_secret', clientSecret);
+
+  const res = await net.fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Token exchange failed (${res.status}): ${text}`);
+  }
+  return res.json();
+});
+
+ipcMain.handle('youtube-oauth-refresh', async (_e, { refreshToken }) => {
+  const clientSecret = process.env.VITE_YOUTUBE_CLIENT_SECRET;
+  const clientId = process.env.VITE_YOUTUBE_CLIENT_ID;
+  if (!clientId || !refreshToken) throw new Error('Missing client ID or refresh token');
+
+  const body = new URLSearchParams({ client_id: clientId, refresh_token: refreshToken, grant_type: 'refresh_token' });
+  if (clientSecret) body.set('client_secret', clientSecret);
+
+  const res = await net.fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Token refresh failed (${res.status}): ${text}`);
+  }
+  return res.json();
 });
 
 app.whenReady().then(() => {

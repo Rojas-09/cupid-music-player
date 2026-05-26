@@ -12,7 +12,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "electron": "electron .",
-    "package": "vite build && electron-builder"
+    "package": "vite build && electron-builder",
+    "security:audit": "npm audit",
+    "security:check": "node scripts/security-check.cjs"
   },
   "dependencies": {
     "dotenv": "^17.4.2",
