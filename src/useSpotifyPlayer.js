@@ -13,6 +13,8 @@ export default function useSpotifyPlayer(tracks, playMode = 'normal') {
   const audioRef = useRef(new Audio());
   const playModeRef = useRef(playMode);
   playModeRef.current = playMode;
+  const tracksRef = useRef(tracks);
+  tracksRef.current = tracks;
   // Shared between prefetch, next(), and onEnded so we play what we warmed
   const nextIdxRef = useRef(null);
   const [trackIndex, setTrackIndex] = useState(0);
@@ -142,15 +144,13 @@ export default function useSpotifyPlayer(tracks, playMode = 'normal') {
         return;
       }
       setTrackIndex((prev) => {
-        if (nextIdxRef.current !== null && nextIdxRef.current !== prev) {
-          return nextIdxRef.current;
-        }
-        if (playModeRef.current === 'shuffle' && tracks.length > 1) {
+        const t = tracksRef.current;
+        if (playModeRef.current === 'shuffle' && t.length > 1) {
           let next;
-          do { next = Math.floor(Math.random() * tracks.length); } while (next === prev);
+          do { next = Math.floor(Math.random() * t.length); } while (next === prev);
           return next;
         }
-        return (prev + 1) % tracks.length;
+        return (prev + 1) % t.length;
       });
     };
 
@@ -163,7 +163,7 @@ export default function useSpotifyPlayer(tracks, playMode = 'normal') {
       audio.removeEventListener('loadedmetadata', onLoadedMetadata);
       audio.removeEventListener('ended', onEnded);
     };
-  }, [tracks.length]);
+  }, []);
 
   // ── Playback controls ────────────────────────────────────
 
@@ -179,28 +179,25 @@ export default function useSpotifyPlayer(tracks, playMode = 'normal') {
 
   const next = useCallback(() => {
     setTrackIndex((prev) => {
-      // Prefer the precomputed next (matches what prefetch warmed)
-      if (nextIdxRef.current !== null && nextIdxRef.current !== prev) {
-        return nextIdxRef.current;
-      }
-      if (playModeRef.current === 'shuffle' && tracks.length > 1) {
+      const t = tracksRef.current;
+      if (playModeRef.current === 'shuffle' && t.length > 1) {
         let n;
-        do { n = Math.floor(Math.random() * tracks.length); } while (n === prev);
+        do { n = Math.floor(Math.random() * t.length); } while (n === prev);
         return n;
       }
-      return (prev + 1) % tracks.length;
+      return (prev + 1) % t.length;
     });
     setIsPlaying(true);
-  }, [tracks.length]);
+  }, []);
 
   const prev = useCallback(() => {
     if (audio.currentTime > 3) {
       audio.currentTime = 0;
     } else {
-      setTrackIndex((prev) => (prev - 1 + tracks.length) % tracks.length);
+      setTrackIndex((prev) => (prev - 1 + tracksRef.current.length) % tracksRef.current.length);
     }
     setIsPlaying(true);
-  }, [tracks.length]);
+  }, []);
 
   const seek = useCallback((fraction) => {
     if (audio.duration) {

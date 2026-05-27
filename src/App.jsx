@@ -355,7 +355,7 @@ export default function App() {
     }
   }, []);
 
-  const { theme, toggleTheme, assets } = useTheme();
+  const { theme, toggleTheme, setTheme, assets } = useTheme();
 
   const [recordFrame, setRecordFrame] = useState(0);
   const [needleFrame, setNeedleFrame] = useState(0);
@@ -467,7 +467,7 @@ export default function App() {
   const resizeBR = useResize('bottom-right');
 
   return (
-    <div className={`player ${theme === 'blue' ? 'theme-blue' : ''}`}>
+    <div className={`player theme-${theme}`}>
       {/* Base frame */}
       <img src={assets.frame} className="layer" alt="" draggable={false} />
 
@@ -700,15 +700,21 @@ export default function App() {
             <div className="settings-theme-row">
               <button
                 className={`settings-theme-btn ${theme === 'pink' ? 'active' : ''}`}
-                onClick={() => { if (theme !== 'pink') toggleTheme(); }}
+                onClick={() => setTheme('pink')}
               >
                 pink
               </button>
               <button
                 className={`settings-theme-btn ${theme === 'blue' ? 'active' : ''}`}
-                onClick={() => { if (theme !== 'blue') toggleTheme(); }}
+                onClick={() => setTheme('blue')}
               >
                 blue
+              </button>
+              <button
+                className={`settings-theme-btn ${theme === 'men' ? 'active' : ''}`}
+                onClick={() => setTheme('men')}
+              >
+                men
               </button>
             </div>
             <div className="settings-label">music</div>
