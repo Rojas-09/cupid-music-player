@@ -582,6 +582,24 @@ ipcMain.handle('youtube-fetch-playlist', async (_e, url) => {
   }
 });
 
+ipcMain.handle('youtube-fetch-video', async (_e, videoId) => {
+  try {
+    const { stdout } = await execFileAsync(getYtDlpPath(), [
+      `https://www.youtube.com/watch?v=${videoId}`,
+      '--dump-json',
+      '--no-warnings',
+    ], { timeout: 15000 });
+    const data = JSON.parse(stdout.trim());
+    return {
+      videoId: data.id,
+      title: data.title,
+      artist: data.uploader || data.channel || '',
+    };
+  } catch (err) {
+    throw new Error(`yt-dlp video fetch failed: ${err.message}`);
+  }
+});
+
 // ── Google OAuth loopback ─────────────────────────────────
 // Google's auth servers refuse to render inside Electron's BrowserWindow
 // (embedded-webview policy), so we open the system browser and run a tiny

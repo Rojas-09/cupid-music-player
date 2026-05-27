@@ -46,22 +46,91 @@ export function parsePlaylistUrl(input) {
 }
 
 /**
+ * Normalize a YouTube playlist URL/ID to a clean URL yt-dlp can fetch.
+ * Strips extraneous params like start_radio=1 and handles special
+ * playlist types (RD radio mixes, PL normal playlists, etc.).
+ */
+function normalizePlaylistUrl(input) {
+  const id = parsePlaylistUrl(input);
+  if (!id) return null;
+
+  // Radio mixes (RD prefix) require the watch URL format — yt-dlp
+  // refuses to list them via the plain playlist endpoint.
+  if (/^RD[A-Za-z0-9_-]{11}$/.test(id)) {
+    const videoId = id.slice(2);
+    return `https://www.youtube.com/watch?v=${videoId}&list=${id}`;
+  }
+
+  return `https://www.youtube.com/playlist?list=${id}`;
+}
+
+/**
+ * Extract the seed video ID from a YouTube URL (the `v` parameter).
+ * Returns null if no video ID is present (bare playlist ID).
+ */
+function extractSeedVideoId(input) {
+  if (!input) return null;
+  try {
+    const url = new URL(input.trim());
+    const host = url.hostname.replace(/^www\./, '');
+    if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'music.youtube.com' || host === 'youtu.be') {
+      return url.searchParams.get('v') || null;
+    }
+  } catch {}
+  return null;
+}
+
+/**
+ * Fetch metadata for a single YouTube video by ID.
+ */
+async function fetchVideoMetadata(videoId) {
+  if (!window.cupid?.youtubeFetchVideo) return null;
+  try {
+    return await window.cupid.youtubeFetchVideo(videoId);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Fetch a public/unlisted playlist by URL using yt-dlp in the main process.
- * Returns tracks shaped for the streaming player.
+ * Returns tracks shaped for the streaming player. If the URL contains a
+ * seed video ID (the `v` parameter), it is prepended as the first track
+ * so the radio mix starts from the originating song.
  */
 export async function fetchPlaylistByUrl(playlistUrl) {
   if (!window.cupid?.youtubeFetchPlaylist) {
     throw new Error('YouTube playlist fetch is unavailable in this build');
   }
 
-  const entries = await window.cupid.youtubeFetchPlaylist(playlistUrl);
-  return entries.map((e) => ({
+  const cleanUrl = normalizePlaylistUrl(playlistUrl);
+  if (!cleanUrl) throw new Error('Not a recognised YouTube playlist URL');
+
+  const entries = await window.cupid.youtubeFetchPlaylist(cleanUrl);
+  const tracks = entries.map((e) => ({
     title: e.title,
     artist: e.artist || '',
     art: `https://i.ytimg.com/vi/${e.videoId}/mqdefault.jpg`,
     uri: `youtube:video:${e.videoId}`,
     videoId: e.videoId,
   }));
+
+  // Prepend the seed video if it isn't already first
+  const seedVideoId = extractSeedVideoId(playlistUrl);
+  if (seedVideoId && tracks[0]?.videoId !== seedVideoId) {
+    const meta = await fetchVideoMetadata(seedVideoId);
+    if (meta) {
+      tracks.unshift({
+        title: meta.title,
+        artist: meta.artist,
+        art: `https://i.ytimg.com/vi/${meta.videoId}/mqdefault.jpg`,
+        uri: `youtube:video:${meta.videoId}`,
+        videoId: meta.videoId,
+      });
+    }
+  }
+
+  return tracks;
 }
 
 // ── Data API (requires OAuth sign-in) ──────────────────────

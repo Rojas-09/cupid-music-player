@@ -4,6 +4,7 @@ import './App.css';
 import useAudioPlayer from './useAudioPlayer';
 import useSpotifyPlayer from './useSpotifyPlayer';
 import useTheme from './useTheme';
+import useMediaSession from './useMediaSession';
 import { login as spotifyLogin, handleCallback, isLoggedIn as isSpotifyLoggedIn, logout as spotifyLogout } from './spotify/auth.js';
 import { fetchPlaylistTracks as fetchSpotifyTracks, fetchMyPlaylists as fetchSpotifyPlaylists } from './spotify/api.js';
 import { login as appleLogin, logout as appleLogout, isLoggedIn as isAppleLoggedIn, initMusicKit } from './apple/auth.js';
@@ -249,6 +250,8 @@ export default function App() {
     muted,
     toggleMute,
   } = player;
+
+  useMediaSession({ track, isPlaying, togglePlay, next, prev });
 
   const cyclePlayMode = useCallback(() => {
     setPlayMode((m) => m === 'normal' ? 'shuffle' : m === 'shuffle' ? 'repeat' : 'normal');
