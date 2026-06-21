@@ -21,11 +21,19 @@ import {
   fetchPlaylistByUrl as fetchYouTubePlaylistByUrl,
   fetchMyPlaylists as fetchYouTubePlaylists,
   fetchPlaylistTracks as fetchYouTubeTracks,
+  searchYouTube,
 } from './youtube/api.js';
 
 import progressBarStars from '../assets/progress_bar_stars.png';
 import star from '../assets/star.png';
 import starSelected from '../assets/star_selected.png';
+
+window.addEventListener('error', (event) => {
+  console.error('[global error]', event.message, event.filename, event.lineno);
+});
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('[unhandled rejection]', event.reason);
+});
 
 function useResize(corner) {
   const onMouseDown = useCallback((e) => {
@@ -196,6 +204,9 @@ export default function App() {
   const [youtubeConnected, setYoutubeConnected] = useState(isYouTubeLoggedIn());
   const [youtubeLoggingIn, setYoutubeLoggingIn] = useState(false);
   const [youtubeUrlInput, setYoutubeUrlInput] = useState('');
+  const [youtubeSearchQuery, setYoutubeSearchQuery] = useState('');
+  const [youtubeSearchResults, setYoutubeSearchResults] = useState(null);
+  const [youtubeSearchLoading, setYoutubeSearchLoading] = useState(false);
   const [streamTracks, setStreamTracks] = useState([]);
   const [spotifyPlaylists, setSpotifyPlaylists] = useState([]);
   const [applePlaylists, setApplePlaylists] = useState([]);
@@ -231,8 +242,23 @@ export default function App() {
 
   useEffect(() => { loadLocalPlaylist(); }, [loadLocalPlaylist]);
 
+  const handleYouTubeTrackEnd = useCallback(async (track) => {
+    if (!track.videoId) return;
+    try {
+      const rdPlaylistId = `RD${track.videoId}`;
+      const rdUrl = `https://www.youtube.com/watch?v=${track.videoId}&list=${rdPlaylistId}`;
+      const tracks = await fetchYouTubePlaylistByUrl(rdUrl);
+      const radioTracks = tracks.filter((t) => t.videoId !== track.videoId);
+      if (radioTracks.length > 0) {
+        setStreamTracks(radioTracks);
+      }
+    } catch (err) {
+      console.warn('YouTube Radio fetch failed:', err.message);
+    }
+  }, []);
+
   const local = useAudioPlayer(localTracks, playMode, window.cupid?.getLocalAudioPath);
-  const streaming = useSpotifyPlayer(streamTracks, playMode);
+  const streaming = useSpotifyPlayer(streamTracks, playMode, handleYouTubeTrackEnd);
   const player = source === 'streaming' ? streaming : local;
 
   const {
@@ -242,6 +268,7 @@ export default function App() {
     duration,
     currentTime,
     togglePlay,
+    play,
     next,
     prev,
     seek,
@@ -311,6 +338,40 @@ export default function App() {
       setLoadingPlaylist(false);
     }
   }, []);
+
+  // ── Search YouTube by query ──────────────────────────────
+  const handleYoutubeSearch = useCallback(async (query) => {
+    if (!query.trim()) return;
+    setYoutubeSearchLoading(true);
+    setSettingsError(null);
+    try {
+      const results = await searchYouTube(query.trim());
+      setYoutubeSearchResults(results);
+    } catch (err) {
+      setSettingsError(err.message);
+    } finally {
+      setYoutubeSearchLoading(false);
+    }
+  }, []);
+
+  // ── Play a single YouTube search result ─────────────────
+  const playYoutubeSearchResult = useCallback((result) => {
+    const track = {
+      title: result.title,
+      artist: result.artist || '',
+      art: result.thumbnail || `https://i.ytimg.com/vi/${result.id}/mqdefault.jpg`,
+      uri: result.uri,
+      videoId: result.id,
+    };
+    setStreamTracks([track]);
+    setSource('streaming');
+    // Small delay to let the track load, then auto-play
+    setTimeout(() => {
+      if (source === 'streaming' || streaming) {
+        streaming.play?.();
+      }
+    }, 100);
+  }, [streaming]);
 
   // ── Handle Spotify OAuth callback on mount ─────────────
   useEffect(() => {
@@ -822,78 +883,137 @@ export default function App() {
             )}
 
             {musicService === 'youtube' && (
-              isYouTubeConfigured() ? (
-                !youtubeConnected ? (
-                  <button
-                    className={`settings-theme-btn ${youtubeLoggingIn ? 'disabled' : ''}`}
-                    disabled={youtubeLoggingIn}
-                    onClick={async () => {
-                      setYoutubeLoggingIn(true);
-                      setSettingsError(null);
-                      try {
-                        await youtubeLogin();
-                        setYoutubeConnected(true);
-                        loadYoutubePlaylists();
-                      } catch (err) {
-                        setSettingsError(err.message);
-                      } finally {
-                        setYoutubeLoggingIn(false);
-                      }
-                    }}
-                  >
-                    {youtubeLoggingIn ? 'waiting for browser...' : 'log in with google'}
-                  </button>
-                ) : (
-                  <>
-                    <PlaylistList
-                      loading={loadingPlaylists}
-                      playlists={youtubePlaylists}
-                      loadingPlaylist={loadingPlaylist}
-                      onSelect={(id) => loadPlaylist(id, 'youtube')}
-                    />
-                    <div className="settings-theme-row">
-                      <button
-                        className={`settings-theme-btn ${loadingPlaylists ? 'disabled' : ''}`}
-                        disabled={loadingPlaylists}
-                        onClick={() => loadYoutubePlaylists()}
-                      >
-                        refresh
-                      </button>
-                      <button className="settings-theme-btn" onClick={() => {
-                        youtubeLogout();
-                        setYoutubeConnected(false);
-                        setYoutubePlaylists([]);
-                        if (source === 'streaming') setSource('local');
-                      }}>
-                        logout
-                      </button>
-                    </div>
-                  </>
-                )
-              ) : (
-                <>
+              <>
+                {/* ── Search bar (always visible) ─────────── */}
+                <div className="settings-theme-row">
                   <input
                     className="settings-input"
                     type="text"
-                    placeholder="paste a youtube playlist link"
-                    value={youtubeUrlInput}
-                    onChange={(e) => setYoutubeUrlInput(e.target.value)}
+                    placeholder="search youtube songs or artists..."
+                    value={youtubeSearchQuery}
+                    onChange={(e) => setYoutubeSearchQuery(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' && youtubeUrlInput.trim()) {
-                        loadYoutubePlaylistFromUrl(youtubeUrlInput.trim());
+                      if (e.key === 'Enter' && youtubeSearchQuery.trim()) {
+                        handleYoutubeSearch(youtubeSearchQuery);
                       }
                     }}
-                    disabled={loadingPlaylist}
+                    disabled={youtubeSearchLoading}
                   />
                   <button
-                    className={`settings-theme-btn ${loadingPlaylist || !youtubeUrlInput.trim() ? 'disabled' : ''}`}
-                    onClick={() => loadYoutubePlaylistFromUrl(youtubeUrlInput.trim())}
-                    disabled={loadingPlaylist || !youtubeUrlInput.trim()}
+                    className={`settings-theme-btn ${youtubeSearchLoading || !youtubeSearchQuery.trim() ? 'disabled' : ''}`}
+                    onClick={() => handleYoutubeSearch(youtubeSearchQuery)}
+                    disabled={youtubeSearchLoading || !youtubeSearchQuery.trim()}
                   >
-                    {loadingPlaylist ? 'loading...' : 'load playlist'}
+                    {youtubeSearchLoading ? 'searching...' : 'search'}
                   </button>
-                </>
-              )
+                </div>
+
+                {/* ── Search results ──────────────────────── */}
+                {youtubeSearchResults !== null && (
+                  <div className="youtube-search-results">
+                    {youtubeSearchResults.length === 0 ? (
+                      <p className="settings-hint">No results found</p>
+                    ) : (
+                      youtubeSearchResults.map((r) => (
+                        <button
+                          key={r.id}
+                          className="youtube-search-result"
+                          onClick={() => playYoutubeSearchResult(r)}
+                          title={`${r.title} - ${r.artist}`}
+                        >
+                          <img
+                            src={r.thumbnail}
+                            alt=""
+                            className="youtube-search-thumb"
+                            loading="lazy"
+                          />
+                          <div className="youtube-search-info">
+                            <div className="youtube-search-title">{r.title}</div>
+                            <div className="youtube-search-artist">{r.artist}</div>
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {/* ── Separator ─────────────────────────────── */}
+                <hr className="settings-divider" />
+
+                {/* ── OAuth / URL section ─────────────────── */}
+                {isYouTubeConfigured() ? (
+                  !youtubeConnected ? (
+                    <button
+                      className={`settings-theme-btn ${youtubeLoggingIn ? 'disabled' : ''}`}
+                      disabled={youtubeLoggingIn}
+                      onClick={async () => {
+                        setYoutubeLoggingIn(true);
+                        setSettingsError(null);
+                        try {
+                          await youtubeLogin();
+                          setYoutubeConnected(true);
+                          loadYoutubePlaylists();
+                        } catch (err) {
+                          setSettingsError(err.message);
+                        } finally {
+                          setYoutubeLoggingIn(false);
+                        }
+                      }}
+                    >
+                      {youtubeLoggingIn ? 'waiting for browser...' : 'log in with google'}
+                    </button>
+                  ) : (
+                    <>
+                      <PlaylistList
+                        loading={loadingPlaylists}
+                        playlists={youtubePlaylists}
+                        loadingPlaylist={loadingPlaylist}
+                        onSelect={(id) => loadPlaylist(id, 'youtube')}
+                      />
+                      <div className="settings-theme-row">
+                        <button
+                          className={`settings-theme-btn ${loadingPlaylists ? 'disabled' : ''}`}
+                          disabled={loadingPlaylists}
+                          onClick={() => loadYoutubePlaylists()}
+                        >
+                          refresh
+                        </button>
+                        <button className="settings-theme-btn" onClick={() => {
+                          youtubeLogout();
+                          setYoutubeConnected(false);
+                          setYoutubePlaylists([]);
+                          if (source === 'streaming') setSource('local');
+                        }}>
+                          logout
+                        </button>
+                      </div>
+                    </>
+                  )
+                ) : (
+                  <>
+                    <input
+                      className="settings-input"
+                      type="text"
+                      placeholder="paste a youtube playlist link"
+                      value={youtubeUrlInput}
+                      onChange={(e) => setYoutubeUrlInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && youtubeUrlInput.trim()) {
+                          loadYoutubePlaylistFromUrl(youtubeUrlInput.trim());
+                        }
+                      }}
+                      disabled={loadingPlaylist}
+                    />
+                    <button
+                      className={`settings-theme-btn ${loadingPlaylist || !youtubeUrlInput.trim() ? 'disabled' : ''}`}
+                      onClick={() => loadYoutubePlaylistFromUrl(youtubeUrlInput.trim())}
+                      disabled={loadingPlaylist || !youtubeUrlInput.trim()}
+                    >
+                      {loadingPlaylist ? 'loading...' : 'load playlist'}
+                    </button>
+                  </>
+                )}
+              </>
             )}
 
             {settingsError && <div className="settings-error">{settingsError}</div>}

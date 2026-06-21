@@ -232,3 +232,23 @@ export async function fetchPlaylistTracks(playlistId) {
 
   return tracks;
 }
+
+/**
+ * Search YouTube by query using yt-dlp.
+ * Returns up to 10 results with videoId, title, artist, duration, thumbnail.
+ */
+export async function searchYouTube(query) {
+  if (!window.cupid?.youtubeSearch) {
+    throw new Error('YouTube search is unavailable in this build');
+  }
+  const data = await window.cupid.youtubeSearch(query);
+  if (!data || !data.length) return [];
+  return data.map((r) => ({
+    id: r.videoId,
+    title: r.title,
+    artist: r.artist,
+    duration: r.duration,
+    thumbnail: r.thumbnail,
+    uri: `youtube:video:${r.videoId}`,
+  }));
+}

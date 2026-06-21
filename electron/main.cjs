@@ -8,6 +8,9 @@ const { Readable } = require('node:stream');
 const http = require('node:http');
 
 const fs = require('node:fs');
+
+// Set app name early so the Linux WM_CLASS matches StartupWMClass in .desktop
+app.name = 'Cupid Player';
 const jwt = require('jsonwebtoken');
 
 const execFileAsync = promisify(execFile);
@@ -134,49 +137,48 @@ function getYtDlpPath() {
 
 const YT_ID_RE = /^[A-Za-z0-9_-]{11}$/;
 
-// youtubei.js handles YT Music search (audio uploads, not music videos).
-// URL extraction stays on yt-dlp — YT now withholds stream URLs from WEB
-// client responses without a PoToken, which youtubei.js can't generate.
-let innertubePromise = null;
-function getInnertube() {
-  if (innertubePromise) return innertubePromise;
-  innertubePromise = (async () => {
-    const { Innertube, UniversalCache } = await import('youtubei.js');
-    return Innertube.create({
-      cache: new UniversalCache(true, path.join(app.getPath('userData'), 'innertube-cache')),
-      generate_session_locally: true,
-    });
-  })().catch((err) => {
-    innertubePromise = null;
-    throw err;
-  });
-  return innertubePromise;
-}
-
 async function searchYouTubeMusic(title, artist) {
-  const yt = await getInnertube();
-  const search = await yt.music.search(`${title} ${artist}`, { type: 'song' });
-
-  let top = search.songs?.contents?.find((c) => c?.id);
-  if (!top) {
-    for (const shelf of search.contents || []) {
-      const item = shelf?.contents?.find?.((c) => c?.id);
-      if (item) { top = item; break; }
-    }
-  }
-  if (!top?.id) throw new Error('No song result');
-  return top.id;
-}
-
-async function ytDlpExtract(target) {
+  // Use yt-dlp's native search (more reliable, no PoToken needed)
   const { stdout } = await execFileAsync(getYtDlpPath(), [
-    target,
-    '-f', 'bestaudio[ext=m4a]/bestaudio',
-    '--no-playlist',
+    `ytsearch1:"${title} ${artist}"`,
+    '--flat-playlist',
+    '--dump-json',
     '--no-warnings',
+    '-f', 'bestaudio[ext=m4a]/bestaudio',
     '-g',
   ], { timeout: 15000 });
-  return stdout.trim();
+  const data = JSON.parse(stdout.trim());
+  if (!data.id) throw new Error('No song result');
+  return data.id;
+}
+
+async function ytDlpExtract(target, format = null) {
+  const formats = format
+    ? [format]
+    : [
+        'bestaudio[ext=m4a]/bestaudio',  // preferred: m4a (AAC)
+        'bestaudio[ext=webm]/bestaudio', // fallback 1: webm (Opus)
+        'bestaudio/best',                // fallback 2: any audio
+        'best',                          // fallback 3: any format
+      ];
+
+  for (const fmt of formats) {
+    try {
+      const { stdout } = await execFileAsync(getYtDlpPath(), [
+        target,
+        '-f', fmt,
+        '--no-playlist',
+        '--no-warnings',
+        '-g',
+      ], { timeout: 15000 });
+      const url = stdout.trim();
+      if (url) return url;
+    } catch (err) {
+      // try next format
+      continue;
+    }
+  }
+  throw new Error(`yt-dlp failed to extract stream for ${target} (tried ${formats.length} formats)`);
 }
 
 async function ytDlpSearch(title, artist) {
@@ -234,15 +236,7 @@ async function getStreamUrl(title, artist) {
   const promise = (async () => {
     try {
       if (!videoId) {
-        try {
-          videoId = await searchYouTubeMusic(title, artist);
-        } catch (err) {
-          console.warn('[youtubei search] fallback to yt-dlp:', err.message);
-          const result = await ytDlpSearch(title, artist);
-          videoId = result.id;
-          // We already have a usable URL from yt-dlp — seed the decipher cache
-          decipheredCache.set(videoId, { url: result.url, time: Date.now() });
-        }
+        videoId = await searchYouTubeMusic(title, artist);
         videoIdCache.set(cacheKey, videoId);
         persistVideoIdCache();
       }
@@ -273,7 +267,50 @@ function streamUrlForVideoId(videoId) {
 // Fetch a public/unlisted YouTube playlist via yt-dlp --flat-playlist.
 // Returns an array of { videoId, title, artist, duration } — no API key
 // or sign-in required.
+
+// Playlist cache (7-day TTL)
+const PLAYLIST_CACHE_FILE = path.join(app.getPath('userData'), 'yt-playlist-cache.json');
+const PLAYLIST_CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
+let playlistCache = new Map();
+
+function loadPlaylistCache() {
+  try {
+    const raw = fs.readFileSync(PLAYLIST_CACHE_FILE, 'utf8');
+    const data = JSON.parse(raw);
+    for (const [key, value] of Object.entries(data)) {
+      if (Date.now() - value.timestamp < PLAYLIST_CACHE_TTL) {
+        playlistCache.set(key, value);
+      }
+    }
+  } catch {
+    // no cache file or invalid
+  }
+}
+
+function savePlaylistCache() {
+  const data = Object.fromEntries(playlistCache);
+  fs.promises.writeFile(PLAYLIST_CACHE_FILE, JSON.stringify(data)).catch(() => {});
+}
+
 async function fetchYouTubePlaylistViaYtDlp(url) {
+  // Normalize URL to use as cache key
+  const cacheKey = url.trim();
+
+  // Check cache first
+  const cached = playlistCache.get(cacheKey);
+  if (cached) {
+    // Return cached data immediately, refresh in background
+    setTimeout(() => {
+      fetchYouTubePlaylistViaYtDlpFresh(url).catch(() => {});
+    }, 0);
+    return cached.data;
+  }
+
+  // No cache or expired — fetch fresh
+  return fetchYouTubePlaylistViaYtDlpFresh(url);
+}
+
+async function fetchYouTubePlaylistViaYtDlpFresh(url) {
   const { stdout } = await execFileAsync(getYtDlpPath(), [
     url,
     '--flat-playlist',
@@ -283,7 +320,7 @@ async function fetchYouTubePlaylistViaYtDlp(url) {
 
   const data = JSON.parse(stdout);
   const entries = data.entries || [];
-  return entries
+  const result = entries
     .filter((e) => e && e.id && YT_ID_RE.test(e.id))
     .map((e) => ({
       videoId: e.id,
@@ -291,6 +328,12 @@ async function fetchYouTubePlaylistViaYtDlp(url) {
       artist: e.uploader || e.channel || '',
       duration: typeof e.duration === 'number' ? e.duration : null,
     }));
+
+  // Update cache
+  playlistCache.set(url.trim(), { data: result, timestamp: Date.now() });
+  savePlaylistCache();
+
+  return result;
 }
 
 const isDev = process.env.NODE_ENV === 'development';
@@ -350,11 +393,14 @@ function createWindow() {
   const win = new BrowserWindow({
     width: WIDTH,
     height: HEIGHT,
+    minWidth: 200,
+    minHeight: 200,
     resizable: false,
-    frame: false,
-    transparent: true,
-    backgroundColor: '#00000000',
-    hasShadow: false,
+    frame: true,
+    transparent: false,
+    backgroundColor: '#000000',
+    hasShadow: true,
+    title: 'Cupid Player',
     icon: path.join(__dirname, '..', 'assets', 'pink', 'favicon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -522,10 +568,24 @@ function createWindow() {
   }
 
   if (isDev) {
+    console.log('[main] Loading dev URL: http://127.0.0.1:5173');
     win.loadURL('http://127.0.0.1:5173');
   } else {
+    console.log('[main] Loading production file');
     win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   }
+
+  win.webContents.on('did-finish-load', () => {
+    console.log('[main] Page finished loading');
+  });
+
+  win.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    console.error('[main] Page failed to load:', errorCode, errorDescription);
+  });
+
+  win.webContents.on('render-process-gone', (event, details) => {
+    console.error('[main] Renderer process gone:', details);
+  });
 }
 
 // ── Global IPC handlers (persist across window reloads) ──
@@ -597,6 +657,34 @@ ipcMain.handle('youtube-fetch-video', async (_e, videoId) => {
     };
   } catch (err) {
     throw new Error(`yt-dlp video fetch failed: ${err.message}`);
+  }
+});
+
+ipcMain.handle('youtube-search', async (_e, query) => {
+  try {
+    const { stdout } = await execFileAsync(getYtDlpPath(), [
+      `ytsearch10:${query}`,
+      '--flat-playlist',
+      '--dump-json',
+      '--no-warnings',
+    ], { timeout: 20000, maxBuffer: 10 * 1024 * 1024 });
+    // yt-dlp outputs one JSON line per result with --flat-playlist + --dump-json
+    const lines = stdout.trim().split('\n').filter(Boolean);
+    const results = lines.map((line) => {
+      try {
+        const data = JSON.parse(line);
+        return {
+          videoId: data.id,
+          title: data.title || data.id,
+          artist: data.uploader || data.channel || '',
+          duration: typeof data.duration === 'number' ? data.duration : data.duration_string || null,
+          thumbnail: data.thumbnail || `https://i.ytimg.com/vi/${data.id}/mqdefault.jpg`,
+        };
+      } catch { return null; }
+    }).filter(Boolean);
+    return results;
+  } catch (err) {
+    throw new Error(`YouTube search failed: ${err.message}`);
   }
 });
 
@@ -830,8 +918,10 @@ app.whenReady().then(() => {
 
   createWindow();
 
-  // Pre-warm both engines so the first track load skips cold-start
-  getInnertube().catch(() => {});
+  // Load playlist cache
+  loadPlaylistCache();
+
+  // Pre-warm yt-dlp so the first track load skips cold-start
   execFile(getYtDlpPath(), ['--version'], () => {});
 
   app.on('activate', () => {

@@ -682,3 +682,90 @@
   color: #c44;
   word-break: break-word;
 }
+
+/* ── YouTube search results ─────────────────── */
+
+.settings-hint {
+  font-family: 'Rainyhearts', monospace;
+  font-size: calc(10 / 306 * 100vw);
+  color: var(--color-panel-text);
+  opacity: 0.6;
+  margin: calc(4 / 306 * 100vw) 0;
+  text-align: center;
+}
+
+.settings-divider {
+  border: none;
+  border-top: calc(1 / 306 * 100vw) solid var(--color-panel-text);
+  opacity: 0.2;
+  margin: calc(6 / 306 * 100vw) 0;
+}
+
+.youtube-search-results {
+  max-height: calc(90 / 306 * 100vw);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: calc(2 / 306 * 100vw);
+  scrollbar-width: none;
+}
+
+.youtube-search-results::-webkit-scrollbar {
+  display: none;
+}
+
+.youtube-search-result {
+  width: 100%;
+  min-height: calc(24 / 306 * 100vw);
+  flex-shrink: 0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: calc(4 / 306 * 100vw);
+  background: rgba(255, 255, 255, 0.04);
+  border: none;
+  border-radius: calc(2 / 306 * 100vw);
+  padding: calc(2 / 306 * 100vw);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.youtube-search-result:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.youtube-search-thumb {
+  width: calc(20 / 306 * 100vw);
+  height: calc(14 / 306 * 100vw);
+  object-fit: cover;
+  border-radius: calc(1 / 306 * 100vw);
+  flex-shrink: 0;
+}
+
+.youtube-search-info {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.youtube-search-title {
+  font-family: 'Rainyhearts', monospace;
+  font-size: calc(10 / 306 * 100vw);
+  line-height: 1.2;
+  color: var(--color-panel-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.youtube-search-artist {
+  font-family: 'Rainyhearts', monospace;
+  font-size: calc(8 / 306 * 100vw);
+  line-height: 1.2;
+  color: var(--color-panel-text);
+  opacity: 0.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

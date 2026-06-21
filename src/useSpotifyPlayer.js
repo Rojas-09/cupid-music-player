@@ -9,7 +9,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-export default function useSpotifyPlayer(tracks, playMode = 'normal') {
+export default function useSpotifyPlayer(tracks, playMode = 'normal', onTrackEnd) {
   const audioRef = useRef(new Audio());
   const playModeRef = useRef(playMode);
   playModeRef.current = playMode;
@@ -143,8 +143,16 @@ export default function useSpotifyPlayer(tracks, playMode = 'normal') {
         audio.play().catch(() => {});
         return;
       }
+      const t = tracksRef.current;
+      const isLastTrack = t.length === 1 || (playModeRef.current !== 'shuffle' && trackIndex === t.length - 1);
+      const currentTrack = t[trackIndex];
+      
+      // Call onTrackEnd callback for YouTube Radio (if last track or single track)
+      if (isLastTrack && currentTrack?.videoId && onTrackEnd) {
+        onTrackEnd(currentTrack);
+      }
+      
       setTrackIndex((prev) => {
-        const t = tracksRef.current;
         if (playModeRef.current === 'shuffle' && t.length > 1) {
           let next;
           do { next = Math.floor(Math.random() * t.length); } while (next === prev);
@@ -167,15 +175,19 @@ export default function useSpotifyPlayer(tracks, playMode = 'normal') {
 
   // ── Playback controls ────────────────────────────────────
 
+  const play = useCallback(() => {
+    audio.play().catch(() => {});
+    setIsPlaying(true);
+  }, []);
+
   const togglePlay = useCallback(() => {
     if (isPlaying) {
       audio.pause();
       setIsPlaying(false);
     } else {
-      audio.play().catch(() => {});
-      setIsPlaying(true);
+      play();
     }
-  }, [isPlaying]);
+  }, [isPlaying, play]);
 
   const next = useCallback(() => {
     setTrackIndex((prev) => {
@@ -228,6 +240,7 @@ export default function useSpotifyPlayer(tracks, playMode = 'normal') {
     duration,
     currentTime,
     togglePlay,
+    play,
     next,
     prev,
     seek,
