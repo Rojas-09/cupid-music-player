@@ -18,13 +18,6 @@
   --color-panel-text: #C8D3F6;
 }
 
-.player.theme-men {
-  --color-title: #E0E0E0;
-  --color-primary: #1A1A1A;
-  --color-secondary: #6B6B6B;
-  --color-panel-text: #D4D4D4;
-}
-
 
 .layer {
   position: absolute;

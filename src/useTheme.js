@@ -77,38 +77,6 @@ import blueRepeatButton from '../assets/blue/repeat_button.png';
 import blueVolumeBarHigh from '../assets/blue/volume_bar_high.png';
 import blueVolumeBarLow from '../assets/blue/volume_bar_low.png';
 
-// ── Men theme assets ─────────────────────────────────────
-import menFrame from '../assets/men/frame.png';
-import menFrameNoBg from '../assets/men/frame_no_background.png';
-import menPlant from '../assets/men/plant.png';
-import menRecordPlayer from '../assets/men/record_player.png';
-import menAlbumFrame from '../assets/men/album_frame.png';
-import menBackwardsButton from '../assets/men/backwards_button.png';
-import menPauseButton from '../assets/men/pause_button.png';
-import menPlayButton from '../assets/men/play_button.png';
-import menForwardsButton from '../assets/men/forwards_button.png';
-import menExitButton from '../assets/men/exit_button.png';
-import menMinimizerButton from '../assets/men/minimizer_button.png';
-import menWindowButton from '../assets/men/window_button.png';
-import menFavicon from '../assets/men/favicon.png';
-import menProgressBar from '../assets/men/progress_bar.png';
-import menSettings from '../assets/men/settings.png';
-import menVolumeButton from '../assets/men/volume_button.png';
-import menMuteButton from '../assets/men/mute_button.png';
-import menShuffleButton from '../assets/men/shuffle_button.png';
-import menRepeatButton from '../assets/men/repeat_button.png';
-import menVolumeBarHigh from '../assets/men/volume_bar_high.png';
-import menVolumeBarLow from '../assets/men/volume_bar_low.png';
-
-// ── Men needle animations ────────────────────────────────
-// Use blue needle frames initially (user can replace later)
-import menNeedlePlay1 from '../assets/animations/blue/needle-playing/frame-1.png';
-import menNeedlePlay2 from '../assets/animations/blue/needle-playing/frame-2.png';
-import menNeedlePlay3 from '../assets/animations/blue/needle-playing/frame-3.png';
-import menNeedleChange1 from '../assets/animations/blue/needle-change/frame-1.png';
-import menNeedleChange2 from '../assets/animations/blue/needle-change/frame-2.png';
-import menNeedleChange3 from '../assets/animations/blue/needle-change/frame-3.png';
-
 const THEME_ASSETS = {
   pink: {
     frame: pinkFrame,
@@ -162,37 +130,11 @@ const THEME_ASSETS = {
     needlePlayFrames: [blueNeedlePlay1, blueNeedlePlay2, blueNeedlePlay3],
     needleChangeFrames: [blueNeedleChange1, blueNeedleChange2, blueNeedleChange3],
   },
-  men: {
-    frame: menFrame,
-    frameNoBg: menFrameNoBg,
-    plant: menPlant,
-    recordPlayer: menRecordPlayer,
-    albumFrame: menAlbumFrame,
-    backwardsButton: menBackwardsButton,
-    pauseButton: menPauseButton,
-    playButton: menPlayButton,
-    forwardsButton: menForwardsButton,
-    exitButton: menExitButton,
-    minimizerButton: menMinimizerButton,
-    windowButton: menWindowButton,
-    favicon: menFavicon,
-    progressBar: menProgressBar,
-    settings: menSettings,
-    volumeButton: menVolumeButton,
-    muteButton: menMuteButton,
-    shuffleButton: menShuffleButton,
-    repeatButton: menRepeatButton,
-    volumeBarHigh: menVolumeBarHigh,
-    volumeBarLow: menVolumeBarLow,
-    ...SHARED_RECORD_FRAMES,
-    needlePlayFrames: [menNeedlePlay1, menNeedlePlay2, menNeedlePlay3],
-    needleChangeFrames: [menNeedleChange1, menNeedleChange2, menNeedleChange3],
-  },
 };
 
 const STORAGE_KEY = 'cupid-player-theme';
 
-const THEMES = ['pink', 'blue', 'men'];
+const THEMES = ['pink', 'blue'];
 
 function getStoredTheme() {
   try {

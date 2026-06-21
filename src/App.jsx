@@ -774,12 +774,6 @@ export default function App() {
               >
                 blue
               </button>
-              <button
-                className={`settings-theme-btn ${theme === 'men' ? 'active' : ''}`}
-                onClick={() => setTheme('men')}
-              >
-                men
-              </button>
             </div>
             <div className="settings-label">music</div>
             <SettingsDropdown
